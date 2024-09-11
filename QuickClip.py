@@ -93,53 +93,72 @@ def runClient(self, ip, porta, nome):
     receive_thread.start()
 
 def hostServer(self, porta):
-    HOST = 'seu ip'
+    HOST = 'localhost'
     PORT = porta
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     server.bind((HOST, PORT))
     server.listen()
     print(f"Server escutando na porta: {PORT}")
-
     clients = []
+    usernames = []
+    addresses = []
 
 
-    def sendMessage():
+    def sendMessage(client):
+        client.send("CONNECTION_TEST".encode("utf-8"))
         global enviar
         if enviar == True:
-            print("oxdga")
             if os.path.exists("areaTransf.json"):
                 with open("areaTransf.json", "r") as arquivo:
                     dados = json.load(arquivo)
                     dadosEnviar = pickle.dumps(dados)
-                for client in clients:
                     try:
                         client.sendall(dadosEnviar)  # Use sendall para garantir o envio completo
                     except BrokenPipeError:
                         print("Erro: Conexão perdida com o cliente.")
             else:
                 print("Arquivo de transferência não encontrado.")
-        enviar = False
+            enviar = False
+        time.sleep(0.2)
 
-    def handle(client, username):
+    def handle(self, client, username):
         while True:
             try:
-                sendMessage()
-            except (EOFError, ConnectionResetError) as e:
-                print(f"Erro ao enviar dados para o cliente: {e}")
+                sendMessage(client)
+            except:
+                print(f"Usuário: {client} desconectado")
                 if client in clients:
                     clients.remove(client)
+                if username in usernames:
+                    usernames.remove(username)
                 client.close()
+                limparConts(self)
+                for i in range(len(usernames)):
+                    Clientsname = tk.Label(criarContainer(self, 10, 10), text=usernames[i], font=self.fontePadrao)
+                    Clientsname.pack()
                 break
 
-    def receive():
+    def receive(self):
         while True:
             client, address = server.accept()
-            print(f"O usuário se conectou no servidor! endereço: {address}")
+            if address[0] in addresses:
+                if client in clients:
+                    clients.remove(client)
+                if username in usernames:
+                    usernames.remove(username)
+                client.close()
+            username = client.recv(1024).decode("utf-8")
+            print(f"O {username} se conectou no servidor! endereço: {address}")
             clients.append(client)
-
-            thread = threading.Thread(target=handle, args=(client, "username"), daemon=True)
+            usernames.append(username)
+            addresses.append(address[0])
+            thread = threading.Thread(target=handle, args=(self, client, username), daemon=True)
             thread.start()
+            limparConts(self)
+            for i in range(len(usernames)):
+                Clientsname = tk.Label(criarContainer(self, 5, 5), text=usernames[i], font=self.fontePadrao)
+                Clientsname.pack()
 
     def salvarTexto(self, n):
         if os.path.exists("areaTransf.json"):
@@ -175,7 +194,7 @@ def hostServer(self, porta):
                     copiarTexto(self, i)
             time.sleep(0.1)
 
-    server_thread = threading.Thread(target=receive, daemon=True)
+    server_thread = threading.Thread(target=receive, args=(self,), daemon=True)
     server_thread.start()
     copyPaste = threading.Thread(target=detectar_tecla, args=(self,), daemon=True)
     copyPaste.start()
@@ -184,22 +203,27 @@ def clientServer(self, IP, Porta, Nome):
     HOST = IP
     PORT = Porta
 
-    username = Nome
+    username = Nome.encode("utf-8")
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((HOST, PORT))
+    client.send(username)
+
 
     def receive():
         while True:
             try:
                 dados = client.recv(1000000)
-                if dados:
-                    print(f"Dados recebidos: {dados[:100]}")  # Imprime uma parte dos dados para depuração
-                    dadosConvert = pickle.loads(dados)
-                    with open("areaTransf.json", "w") as arquivo:
-                        json.dump(dadosConvert, arquivo, indent=4)
-                else:
-                    print("Conexão encerrada pelo servidor.")
-                    break
+                try:
+                    dadosConf = dados.decode("utf-8")
+                    continue
+                except:
+                    if dados:
+                        dadosConvert = pickle.loads(dados)
+                        with open("areaTransf.json", "w") as arquivo:
+                            json.dump(dadosConvert, arquivo, indent=4)
+                    else:
+                        print("Conexão encerrada pelo servidor.")
+                        break
             except (EOFError, pickle.UnpicklingError) as e:
                 print(f"Erro ao desserializar dados: {e}")
                 break
