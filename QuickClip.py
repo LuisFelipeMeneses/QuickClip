@@ -128,18 +128,23 @@ class MainScreen(BaseScreen):
 class clientConnectedScreen(BaseScreen):
     def __init__(self, parent, controller):
         super().__init__(parent, controller)
+        self.clientInServer = True
         self.clientServer(controller, controller.serverIP, controller.serverPort, controller.name)
 
-    def clientDisconnect(self,controller, client):
+    def clientDisconnect(self, controller, client):
         self.clientInServer = False
-        client.close()
-        controller.show_frame(MainScreen,clientConnectedScreen)
+        try:
+            client.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        finally:
+            client.close()
+        controller.show_frame(MainScreen, clientConnectedScreen)
         
 
     def clientServer(self, controller, ip, port, name):
         HOST = ip
         PORT = port
-        print("Connected")
 
         username = name.encode("utf-8")
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -165,14 +170,12 @@ class clientConnectedScreen(BaseScreen):
                             with open("areaTransf.json", "w") as arquivo:
                                 json.dump(dadosConvert, arquivo, indent=4)
                         else:
-                            print("Conexão encerrada pelo servidor.")
                             break
                 except (EOFError, pickle.UnpicklingError) as e:
                     print(f"Erro ao desserializar dados: {e}")
                     break
                 except Exception as e:
                     print(f"Erro: {e}")
-                    break
 
         def copiarTexto(self, n):
             if os.path.exists("areaTransf.json"):
@@ -199,8 +202,8 @@ class serverCreatedScreen(BaseScreen):
     def __init__(self, parent, controller):
         super().__init__(parent, controller)
         serverPort = controller.serverPort
-        self.hostServer(controller, serverPort)
         self.serverRunning = False
+        self.hostServer(controller, serverPort)
 
     def hostServer(self, controller, porta):
         HOST = 'localhost'
@@ -239,7 +242,7 @@ class serverCreatedScreen(BaseScreen):
                 enviar = False
             time.sleep(0.2)
 
-        def handle(self, client, username):
+        def handle(self, client, username, address):
             while True:
                 try:
                     sendMessage(client)
@@ -249,6 +252,8 @@ class serverCreatedScreen(BaseScreen):
                         clients.remove(client)
                     if username in usernames:
                         usernames.remove(username)
+                    if address in addresses:
+                        addresses.remove(address)
                     client.close()
                     self.containersDestroy() 
                     self.clientsListContainer = self.containerCreate()
@@ -258,11 +263,11 @@ class serverCreatedScreen(BaseScreen):
 
         def receive(self):
             while self.serverRunning:
-                print("Procurando...")
                 try:
                     client, address = server.accept()
-                    print("Achou")
                     if address[0] in addresses:
+                        addresses.remove(address[0])
+                        print("Usuario repetido removido")
                         if client in clients:
                             clients.remove(client)
                         if username in usernames:
@@ -273,7 +278,7 @@ class serverCreatedScreen(BaseScreen):
                     clients.append(client)
                     usernames.append(username)
                     addresses.append(address[0])
-                    thread = threading.Thread(target=handle, args=(self, client, username), daemon=True)
+                    thread = threading.Thread(target=handle, args=(self, client, username, address[0]), daemon=True)
                     thread.start()
                     self.containersDestroy() 
                     self.clientsListContainer = self.containerCreate()
@@ -281,6 +286,9 @@ class serverCreatedScreen(BaseScreen):
                         self.fieldAndTextCreate(username, self.clientsListContainer)
                 except OSError:
                     break
+                except Exception as e:
+                    print(f"Deu erro no sv: {e}")
+                    continue
 
         def salvarTexto(self, n):
             if os.path.exists("areaTransf.json"):
@@ -301,9 +309,8 @@ class serverCreatedScreen(BaseScreen):
                 with open("areaTransf.json", "r") as arquivo:
                     pyperclip.copy(json.load(arquivo)["dados"][n]["dado"])
                 #self.txt["text"] = "Texto do arquivo salvo na área de transferência"
-            else:
+            #else:
                 #self.txt["text"] = "Nenhum texto foi copiado, copie um antes"
-                print("sla")
 
         def detectar_tecla(self):
             while True:
@@ -312,7 +319,6 @@ class serverCreatedScreen(BaseScreen):
                         salvarTexto(self, i)
                         global enviar
                         enviar = True
-                        print("asd")
                     elif kb.is_pressed('shift+' + str(i) + '+v'):
                         copiarTexto(self, i)
                 time.sleep(0.1)
