@@ -29,7 +29,7 @@ class Application:
         # Inicialize apenas o frame principal
         self.frames[MainScreen] = MainScreen(self.mainContainer, self)
         self.frames[MainScreen].grid(row=0, column=0, sticky="nsew")
-        self.show_frame(MainScreen,MainScreen)
+        self.show_frame(MainScreen, MainScreen)
 
     def show_frame(self, cont, oldCont):
         if cont not in self.initialized_frames:
@@ -52,17 +52,17 @@ class BaseScreen(tk.Frame):
         self.fontePadrao = ("Arial", "10")
         self.containers = []
 
-    def fieldAndTextCreate(self,txt=None,container=None, fieldCreate=False, sideText=tk.TOP,padx= 5, pady = 5):
+    def fieldAndTextCreate(self, txt=None, container=None, fieldCreate=False, sideText=tk.TOP, padx=5, pady=5):
         if container is None:
             container = self.containerCreate()
-        text = tk.Label(container, text=txt, font=self.fontePadrao).pack(side=sideText, padx= padx, pady= pady)
+        text = tk.Label(container, text=txt, font=self.fontePadrao).pack(side=sideText, padx=padx, pady=pady)
         if fieldCreate:
             field = tk.Entry(container)
             return field
         else:
             return text
 
-    def containerCreate(self, addToList = True, side=tk.TOP, padx=10, pady=10):
+    def containerCreate(self, addToList=True, side=tk.TOP, padx=10, pady=10):
         container = tk.Frame(self, padx=padx, pady=pady)
         container.pack(side=side)
         if addToList:
@@ -74,10 +74,10 @@ class BaseScreen(tk.Frame):
             container.destroy()
         self.containers = []
 
-    def buttomCreate(self,txt, container, func, side=tk.TOP, font=None, width=10, padx= 10, pady= 10):
+    def buttomCreate(self, txt, container, func, side=tk.TOP, font=None, width=10, padx=10, pady=10):
         if font is None:
             font = self.fontePadrao
-        return tk.Button(container, text=txt, font=font, width=width, command= func).pack(side=side, padx= padx, pady= pady)
+        return tk.Button(container, text=txt, font=font, width=width, command=func).pack(side=side, padx=padx, pady=pady)
 
     def nullFunc(self):
         print("")
@@ -86,40 +86,70 @@ class MainScreen(BaseScreen):
     def __init__(self, parent, controller):
         super().__init__(parent, controller)
         mainContainer = self.containerCreate(0)
-        self.buttomCreate("Server",mainContainer, lambda: self.server(controller),tk.LEFT)
-        self.buttomCreate("Client",mainContainer, lambda: self.client(controller), tk.LEFT)
+        self.buttomCreate("Server", mainContainer, lambda: self.server(controller), tk.LEFT)
+        self.buttomCreate("Client", mainContainer, lambda: self.client(controller), tk.LEFT)
         self.fieldAndTextCreate("Seja bem vindo ao QuickClip!")
+        self.serverAddr = None
+        self.serverIPloc = None
+        self.serverPortloc = None
+        self.is_server = False
 
-    def server(self,controller):
-        self.containersDestroy()
-        serverContainer = self.containerCreate()
-        self.buttomCreate("Create",serverContainer,lambda: controller.show_frame(serverCreatedScreen,MainScreen))
-        self.buttomCreate("Advanced",serverContainer,lambda: self.advancedSettings(controller))
+    def discover_servers(self):
+        if self.is_server:
+            print("Esta instância é um servidor, não iniciando a busca de servidores.")
+            return
         
-    def advancedSettings(self,controller):
+        broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        broadcast_socket.settimeout(10)
+        broadcast_socket.bind(('', 37020))  # Porta 37020 é usada para escutar broadcasts
+            
+        try:
+            while True:
+                data, self.serverAddr = broadcast_socket.recvfrom(1024)  # Recebe os pacotes de broadcast
+                self.serverIPloc, self.serverPortloc = self.serverAddr
+                message = data.decode('utf-8')
+                print(f"Servidor descoberto: {message}")
+                
+                # Aqui, você pode preencher campos de IP e Porta automaticamente
+        except socket.timeout:
+            print("Nenhum servidor encontrado.")
+
+    def server(self, controller):
+        self.is_server = True
         self.containersDestroy()
         serverContainer = self.containerCreate()
-        port = self.fieldAndTextCreate("Port",serverContainer,1)
+        self.buttomCreate("Create", serverContainer, lambda: self.createServer(controller, 0))
+        self.buttomCreate("Advanced", serverContainer, lambda: self.advancedSettings(controller))
+        
+    def advancedSettings(self, controller):
+        self.containersDestroy()
+        serverContainer = self.containerCreate()
+        port = self.fieldAndTextCreate("Port", serverContainer, 1)
         port.pack()
-        self.buttomCreate("Create",serverContainer,lambda: self.createServer(controller,int(port.get())))
-        self.buttomCreate("Advanced",serverContainer,lambda: self.server(controller))
+        self.buttomCreate("Create", serverContainer, lambda: self.createServer(controller, int(port.get())))
+        self.buttomCreate("Advanced", serverContainer, lambda: self.server(controller))
 
-    def createServer(self,controller, port):
+    def createServer(self, controller, port=None):
         controller.serverPort = port
         controller.show_frame(serverCreatedScreen, MainScreen)
 
-    def client(self,controller):
+    def client(self, controller):
+        self.is_server = False
         self.containersDestroy()
         clientContainer = self.containerCreate()
-        ip = self.fieldAndTextCreate("IP",clientContainer,1,tk.TOP)
+        ip = self.fieldAndTextCreate("IP", clientContainer, 1, tk.TOP)
         ip.pack()
-        port = self.fieldAndTextCreate("Port",clientContainer,1,tk.TOP)
+        port = self.fieldAndTextCreate("Port", clientContainer, 1, tk.TOP)
         port.pack()
-        name = self.fieldAndTextCreate("Name",clientContainer,1,tk.TOP)
+        name = self.fieldAndTextCreate("Name", clientContainer, 1, tk.TOP)
         name.pack()
-        self.buttomCreate("Join",clientContainer,lambda: self.clientConnecting(controller, ip.get(), int(port.get()), name.get()))
+        self.buttomCreate("Join", clientContainer, lambda: self.clientConnecting(controller, ip.get(), int(port.get()), name.get()))
+        
+        discovery_thread = threading.Thread(target=self.discover_servers, daemon=True)
+        discovery_thread.start()
 
-    def clientConnecting(self,controller,ip,port,name):
+    def clientConnecting(self, controller, ip, port, name):
         controller.serverIP = ip
         controller.serverPort = port
         controller.name = name
@@ -140,7 +170,6 @@ class clientConnectedScreen(BaseScreen):
         finally:
             client.close()
         controller.show_frame(MainScreen, clientConnectedScreen)
-        
 
     def clientServer(self, controller, ip, port, name):
         HOST = ip
@@ -153,9 +182,8 @@ class clientConnectedScreen(BaseScreen):
         self.clientInServer = True
 
         clientContainer = self.containerCreate()
-        self.fieldAndTextCreate("Você se conectou ao servidor!",clientContainer)
-        self.buttomCreate("Disconnect",clientContainer,lambda: self.clientDisconnect(controller, client))
-
+        self.fieldAndTextCreate("Você se conectou ao servidor!", clientContainer)
+        self.buttomCreate("Disconnect", clientContainer, lambda: self.clientDisconnect(controller, client))
 
         def receive():
             while self.clientInServer:
@@ -174,8 +202,9 @@ class clientConnectedScreen(BaseScreen):
                 except (EOFError, pickle.UnpicklingError) as e:
                     print(f"Erro ao desserializar dados: {e}")
                     break
-                except Exception as e:
-                    print(f"Erro: {e}")
+                except Exception:
+                    print("Desconectado")
+                    break
 
         def copiarTexto(self, n):
             if os.path.exists("areaTransf.json"):
@@ -206,24 +235,42 @@ class serverCreatedScreen(BaseScreen):
         self.hostServer(controller, serverPort)
 
     def hostServer(self, controller, porta):
-        HOST = 'localhost'
+        HOST = socket.gethostbyname(socket.gethostname())
         PORT = porta
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.serverRunning = True
 
         server.bind((HOST, PORT))
         server.listen()
+        HOST, PORT = server.getsockname()
         print(f"Server escutando na porta: {PORT}")
         clients = []
         usernames = []
         addresses = []
 
         clientContainer = self.containerCreate(0)
-        self.fieldAndTextCreate("Você criou o servidor",clientContainer)
-        self.portaServer = tk.Label(clientContainer, text=f"Port: {controller.serverPort}", font=self.fontePadrao)
+        self.fieldAndTextCreate("Server Created", clientContainer)
+        self.portaServer = tk.Label(clientContainer, text=f"IP: {HOST}: {PORT}", font=self.fontePadrao)
         self.portaServer.pack(side=tk.TOP)
-        self.buttomCreate("Close Server",clientContainer, lambda: self.closeServer(controller,server)) 
-        self.clientsListContainer = self.containerCreate() 
+        self.buttomCreate("Close Server", clientContainer, lambda: self.closeServer(controller, server))
+        self.fieldAndTextCreate("Clients List: ", clientContainer)
+        self.clientsListContainer = self.containerCreate()
+        broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)  # Habilita o modo broadcast
+
+        def broadcast_announce():
+            while self.serverRunning:
+                try:
+                    message = f"Servidor disponível no IP {HOST}, Porta {PORT}"
+                    broadcast_socket.sendto(message.encode('utf-8'), ('<broadcast>', 37020))  # Envia broadcast para a rede
+                    time.sleep(5)  # Envia a cada 5 segundos
+                except Exception as e:
+                    print(f"Erro ao enviar broadcast: {e}")
+                    break
+        
+        # Thread para envio de broadcast
+        broadcast_thread = threading.Thread(target=broadcast_announce, daemon=True)
+        broadcast_thread.start()
 
         def sendMessage(client):
             client.send("CONNECTION_TEST".encode("utf-8"))
@@ -255,7 +302,7 @@ class serverCreatedScreen(BaseScreen):
                     if address in addresses:
                         addresses.remove(address)
                     client.close()
-                    self.containersDestroy() 
+                    self.containersDestroy()
                     self.clientsListContainer = self.containerCreate()
                     for username in range(len(usernames)):
                         self.fieldAndTextCreate(usernames[username], self.clientsListContainer)
@@ -280,7 +327,7 @@ class serverCreatedScreen(BaseScreen):
                     addresses.append(address[0])
                     thread = threading.Thread(target=handle, args=(self, client, username, address[0]), daemon=True)
                     thread.start()
-                    self.containersDestroy() 
+                    self.containersDestroy()
                     self.clientsListContainer = self.containerCreate()
                     for username in usernames:
                         self.fieldAndTextCreate(username, self.clientsListContainer)
@@ -302,15 +349,11 @@ class serverCreatedScreen(BaseScreen):
             dados["dados"][n]["dado"] = pyperclip.paste()
             with open("areaTransf.json", "w") as arquivo:
                 json.dump(dados, arquivo, indent=4)
-            #self.txt["text"] = "Texto copiado para o arquivo"
 
         def copiarTexto(self, n):
             if os.path.exists("areaTransf.json"):
                 with open("areaTransf.json", "r") as arquivo:
                     pyperclip.copy(json.load(arquivo)["dados"][n]["dado"])
-                #self.txt["text"] = "Texto do arquivo salvo na área de transferência"
-            #else:
-                #self.txt["text"] = "Nenhum texto foi copiado, copie um antes"
 
         def detectar_tecla(self):
             while True:
@@ -326,9 +369,9 @@ class serverCreatedScreen(BaseScreen):
         server_thread = threading.Thread(target=receive, args=(self,), daemon=True)
         server_thread.start()
         copyPaste = threading.Thread(target=detectar_tecla, args=(self,), daemon=True)
-        copyPaste.start() 
+        copyPaste.start()
 
-    def closeServer(self,controller,server):
+    def closeServer(self, controller, server):
         self.serverRunning = False
         server.close()
         print("Servidor fechado!")
