@@ -92,10 +92,11 @@ class MainScreen(BaseScreen):
         self.serverAddr = None
         self.serverIPloc = None
         self.serverPortloc = None
-        self.is_server = False
+        self.searchServer = True
+        self.discovery_thread = None
 
-    def discover_servers(self):
-        if self.is_server:
+    def discover_servers(self,controller):
+        if not self.searchServer:
             print("Esta instância é um servidor, não iniciando a busca de servidores.")
             return
         
@@ -108,15 +109,28 @@ class MainScreen(BaseScreen):
             while True:
                 data, self.serverAddr = broadcast_socket.recvfrom(1024)  # Recebe os pacotes de broadcast
                 self.serverIPloc, self.serverPortloc = self.serverAddr
-                message = data.decode('utf-8')
-                print(f"Servidor descoberto: {message}")
+                if not self.searchServer:
+                    break
+                message = pickle.loads(data)
+                print(f"{message}")
+                try:
+                    serverLoc.destroy()
+                except:
+                    pass
+                serverLoc = self.containerCreate()
+                self.fieldAndTextCreate(f"Servidor: {message[1]}",serverLoc,0,tk.LEFT)
+                self.buttomCreate("Entrar",serverLoc,lambda: self.clientConnecting(controller,message[1],message[2],self.name.get()),tk.RIGHT)
                 
                 # Aqui, você pode preencher campos de IP e Porta automaticamente
         except socket.timeout:
+            try:
+                serverLoc.destroy()
+            except:
+                pass
             print("Nenhum servidor encontrado.")
 
     def server(self, controller):
-        self.is_server = True
+        self.searchServer = False
         self.containersDestroy()
         serverContainer = self.containerCreate()
         self.buttomCreate("Create", serverContainer, lambda: self.createServer(controller, 0))
@@ -135,24 +149,25 @@ class MainScreen(BaseScreen):
         controller.show_frame(serverCreatedScreen, MainScreen)
 
     def client(self, controller):
-        self.is_server = False
+        self.searchServer = True
         self.containersDestroy()
         clientContainer = self.containerCreate()
+        self.name = self.fieldAndTextCreate("Name", clientContainer, 1, tk.TOP)
+        self.name.pack()
         ip = self.fieldAndTextCreate("IP", clientContainer, 1, tk.TOP)
         ip.pack()
         port = self.fieldAndTextCreate("Port", clientContainer, 1, tk.TOP)
         port.pack()
-        name = self.fieldAndTextCreate("Name", clientContainer, 1, tk.TOP)
-        name.pack()
-        self.buttomCreate("Join", clientContainer, lambda: self.clientConnecting(controller, ip.get(), int(port.get()), name.get()))
-        
-        discovery_thread = threading.Thread(target=self.discover_servers, daemon=True)
-        discovery_thread.start()
+        self.buttomCreate("Join", clientContainer, lambda: self.clientConnecting(controller, ip.get(), int(port.get()), self.name.get()))
+        if self.discovery_thread is None or not self.discovery_thread.is_alive():
+            self.discovery_thread = threading.Thread(target= lambda: self.discover_servers(controller), daemon=True)
+            self.discovery_thread.start()
 
     def clientConnecting(self, controller, ip, port, name):
         controller.serverIP = ip
         controller.serverPort = port
         controller.name = name
+        self.searchServer = False
         controller.show_frame(clientConnectedScreen, MainScreen)
 
 class clientConnectedScreen(BaseScreen):
@@ -189,6 +204,9 @@ class clientConnectedScreen(BaseScreen):
             while self.clientInServer:
                 try:
                     dados = client.recv(1000000)
+                    if dados == b'':
+                        self.clientDisconnect(controller,client)
+                        break
                     try:
                         dados.decode("utf-8")
                         continue
@@ -261,8 +279,8 @@ class serverCreatedScreen(BaseScreen):
         def broadcast_announce():
             while self.serverRunning:
                 try:
-                    message = f"Servidor disponível no IP {HOST}, Porta {PORT}"
-                    broadcast_socket.sendto(message.encode('utf-8'), ('<broadcast>', 37020))  # Envia broadcast para a rede
+                    message = ["Servidor QuickClip disponível no IP: ", HOST, PORT]
+                    broadcast_socket.sendto(pickle.dumps(message), ('<broadcast>', 37020))  # Envia broadcast para a rede
                     time.sleep(5)  # Envia a cada 5 segundos
                 except Exception as e:
                     print(f"Erro ao enviar broadcast: {e}")
@@ -303,9 +321,10 @@ class serverCreatedScreen(BaseScreen):
                         addresses.remove(address)
                     client.close()
                     self.containersDestroy()
-                    self.clientsListContainer = self.containerCreate()
                     for username in range(len(usernames)):
-                        self.fieldAndTextCreate(usernames[username], self.clientsListContainer)
+                        clientsListContainer = self.containerCreate()
+                        self.fieldAndTextCreate(usernames[username], clientsListContainer)
+                        self.buttomCreate("Remover",clientsListContainer,lambda: clients[username].close(), tk.RIGHT)
                     break
 
         def receive(self):
@@ -328,14 +347,16 @@ class serverCreatedScreen(BaseScreen):
                     thread = threading.Thread(target=handle, args=(self, client, username, address[0]), daemon=True)
                     thread.start()
                     self.containersDestroy()
-                    self.clientsListContainer = self.containerCreate()
-                    for username in usernames:
-                        self.fieldAndTextCreate(username, self.clientsListContainer)
+                    for username in range(len(usernames)):
+                        clientsListContainer = self.containerCreate()
+                        self.fieldAndTextCreate(usernames[username], clientsListContainer,0, tk.LEFT)
+                        self.buttomCreate("Remover",clientsListContainer,lambda: clients[username].close(), tk.RIGHT)
+                    break
                 except OSError:
                     break
-                except Exception as e:
-                    print(f"Deu erro no sv: {e}")
-                    continue
+                #except Exception as e:
+                    #print(f"Deu erro no sv: {e}")
+                    #continue
 
         def salvarTexto(self, n):
             if os.path.exists("areaTransf.json"):
@@ -343,7 +364,7 @@ class serverCreatedScreen(BaseScreen):
                     dados = json.load(arquivo)
             else:
                 dados = {
-                    "dados": [{"id": 0, "dado": ""}, {"id": 1, "dado": ""}, {"id": 2, "dado": ""}, {"id": 3, "dado": ""}, {"id": 5, "dado": ""}, {"id": 6, "dado": ""}, {"id": 7, "dado": ""}, {"id": 8, "dado": ""}, {"id": 9, "dado": ""}]
+                    "dados": [{"id": i, "dado": ""} for i in range(10)]
                 }
 
             dados["dados"][n]["dado"] = pyperclip.paste()
