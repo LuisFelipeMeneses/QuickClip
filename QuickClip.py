@@ -251,14 +251,34 @@ class serverCreatedScreen(BaseScreen):
         serverPort = controller.serverPort
         self.serverRunning = False
         self.hostServer(controller, serverPort)
+         # Criar um Canvas e uma Scrollbar
+        self.canvas = tk.Canvas(self, width= 200)
+        self.scrollbar = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = tk.Frame(self.canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+
+        self.canvas.config(yscrollcommand=self.scrollbar.set)
+
+        # Organizar o layout
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.clientsContainer = self.scrollable_frame  # Mude isso para usar o scrollable_frame
+
 
     def hostServer(self, controller, porta):
         HOST = socket.gethostbyname(socket.gethostname())
         PORT = porta
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.serverRunning = True
-
         server.bind((HOST, PORT))
+
         server.listen()
         HOST, PORT = server.getsockname()
         print(f"Server escutando na porta: {PORT}")
@@ -320,11 +340,7 @@ class serverCreatedScreen(BaseScreen):
                     if address in addresses:
                         addresses.remove(address)
                     client.close()
-                    self.containersDestroy()
-                    for username in range(len(usernames)):
-                        clientsListContainer = self.containerCreate()
-                        self.fieldAndTextCreate(usernames[username], clientsListContainer)
-                        self.buttomCreate("Remover",clientsListContainer,lambda: clients[username].close(), tk.RIGHT)
+                    update_client_list(self,usernames)
                     break
 
         def receive(self):
@@ -346,17 +362,27 @@ class serverCreatedScreen(BaseScreen):
                     addresses.append(address[0])
                     thread = threading.Thread(target=handle, args=(self, client, username, address[0]), daemon=True)
                     thread.start()
-                    self.containersDestroy()
-                    for username in range(len(usernames)):
-                        clientsListContainer = self.containerCreate()
-                        self.fieldAndTextCreate(usernames[username], clientsListContainer,0, tk.LEFT)
-                        self.buttomCreate("Remover",clientsListContainer,lambda: clients[username].close(), tk.RIGHT)
+                    update_client_list(self,usernames)
                     break
                 except OSError:
                     break
                 #except Exception as e:
                     #print(f"Deu erro no sv: {e}")
                     #continue
+
+        def update_client_list(self, usernames):
+            for widget in self.clientsContainer.winfo_children():
+                widget.destroy()  # Remove todos os widgets existentes
+
+            for username in range(len(usernames)):
+                frame = tk.Frame(self.clientsContainer)  # Crie um Frame para cada cliente
+                frame.pack(fill=tk.X)
+
+                label = tk.Label(frame, text=usernames[username])
+                label.pack(side=tk.LEFT, padx=5)
+
+                button = tk.Button(frame, text="Remover", command=lambda: clients[username].close())
+                button.pack(side=tk.LEFT)
 
         def salvarTexto(self, n):
             if os.path.exists("areaTransf.json"):
@@ -400,6 +426,7 @@ class serverCreatedScreen(BaseScreen):
 
 root = tk.Tk()
 app = Application(root)
-root.geometry("640x360")
+root.geometry("250x425")
+root.resizable(False, False)
 root.title("QuickClip")
 root.mainloop()
